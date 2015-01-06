@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# Virtualenv
+.Python
+bin
+lib
+include
+
+.DS_Store
+.idea
