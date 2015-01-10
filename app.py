@@ -3,6 +3,7 @@ from flask import Flask, jsonify, request
 # import logging
 import requests
 import socket
+import struct
 import sys
 import threading
 import time
@@ -36,6 +37,18 @@ class Node():
             self.status = 'READY'
 
         self.start()
+
+    def id(self):
+        """
+        Encoding the IP:Port combination to a unique integer (Real logic value)
+        :return: integer value of the node identification
+        """
+        return (self.ip2int(self.host) << 16) + self.port
+
+    def decode_id(self, node_id):
+        ip = self.int2ip(node_id >> 16)
+        port = node_id & 65535
+        return ip, port
 
     def start(self):
         if self.status == 'NEW':
@@ -102,6 +115,14 @@ class Node():
     @staticmethod
     def format_url(ip, port, path):
         return "http://" + ip + ":" + str(port) + path
+
+    @staticmethod
+    def ip2int(ip):
+        return struct.unpack("!I", socket.inet_aton(ip))[0]
+
+    @staticmethod
+    def int2ip(int_ip):
+        return socket.inet_ntoa(struct.pack("!I", int_ip))
 
 
 app = Flask(__name__)
