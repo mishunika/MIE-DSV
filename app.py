@@ -1,5 +1,6 @@
 #!flask/bin/python
 from flask import Flask, jsonify, request
+from Queue import Queue
 # import logging
 import requests
 import socket
@@ -12,21 +13,36 @@ import time
 # log = logging.getLogger('werkzeug')
 # log.setLevel(logging.ERROR)
 
+queue = Queue(10)
 
-class Worker(threading.Thread):
-    def __init__(self, job='server'):
+
+class Server(threading.Thread):
+    def __init__(self):
         threading.Thread.__init__(self)
-        self.job = job
 
     def run(self):
-        if self.job == 'server':
-            app.run(host=node.host, port=node.port)
-        else:
-            pass
+        app.run(host=node.host, port=node.port)
+
+
+class Worker(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        global queue
+        global node
+        while True:
+            task = queue.get()
+            if task['method']:
+                getattr(node, task['method'])(*task['args'])
+            queue.task_done()
 
 
 class Node():
     def __init__(self, arg):
+        self.le_participant = False
+        self.leader_id = None
+
         self.host, self.port = self.parse_ip_port(arg[0])
         if len(arg) == 2:
             self.next_host, self.next_port = self.parse_ip_port(arg[1])
@@ -35,8 +51,7 @@ class Node():
             # Connected to itself.
             self.next_host, self.next_port = self.host, self.port
             self.status = 'READY'
-
-        self.start()
+            self.leader_id = self.id()
 
     def id(self):
         """
@@ -60,6 +75,7 @@ class Node():
             if response['success']:
                 self.next_host = response['host']
                 self.next_port = int(response['port'])
+                self.init_leader_election()
 
     def join(self, ip, port):
         """
@@ -82,7 +98,8 @@ class Node():
             'host': self.host,
             'port': self.port,
             'next_host': self.next_host,
-            'next_port': self.next_port
+            'next_port': self.next_port,
+            'leader': self.leader_id
         }
         return s
 
@@ -98,6 +115,41 @@ class Node():
         url = self.format_url(self.next_host, self.next_port, '/ring/quit')
         params = self.serialize()
         requests.post(url, params=params)
+
+    def init_leader_election(self):
+        time.sleep(2)
+        self.chang_roberts('election', 0)
+
+    def chang_roberts(self, message, node_id):
+        if message == 'election':
+            if node_id > self.id():
+                # I am definitely not a leader
+                self.le_participant = True
+            elif node_id < self.id() and not self.le_participant:
+                # I am better, try to be a leader
+                self.le_participant = True
+                node_id = self.id()
+            elif node_id == self.id():
+                # I am the leader
+                self.le_participant = False
+                self.leader_id = node_id
+                message = 'elected'
+            else:
+                return
+        elif message == 'elected':
+            if self.id() == node_id:
+                return
+            else:
+                self.le_participant = False
+                self.leader_id = node_id
+        else:
+            return
+
+        url = self.format_url(self.next_host, self.next_port,
+                              '/ring/le/' + message)
+
+        requests.post(url, {'node_id': node_id})
+        return
 
     @staticmethod
     def parse_ip_port(s):
@@ -179,6 +231,7 @@ def quit_ring():
         # Check if the node is pointing to the quitting node
         if node.next_host == host and node.next_port == port:
             node.change_next_ptr(next_host, next_port)
+            queue.put({'method': 'init_leader_election', 'args': ()})
         else:
             url = Node.format_url(node.next_host, node.next_port, '/ring/quit')
             params = {
@@ -192,9 +245,16 @@ def quit_ring():
     return request.values.get('port')
 
 
+@app.route('/ring/le/<message>', methods=['POST'])
+def le_ring(message):
+    if message == 'election' or message == 'elected':
+        node_id = int(request.values.get('node_id'))
+        queue.put({'method': 'chang_roberts', 'args': (message, node_id)})
+    return ''
+
 node = None
-server = Worker('server')
-# client = Worker('client')
+server = Server()
+client = Worker()
 
 if __name__ == '__main__':
     if len(sys.argv) != 2 and len(sys.argv) != 3:
@@ -209,8 +269,10 @@ if __name__ == '__main__':
     server.daemon = True
     server.start()
 
-    # client.daemon = True
-    # client.start()
+    node.start()
+
+    client.daemon = True
+    client.start()
 
     while True:
         try:
