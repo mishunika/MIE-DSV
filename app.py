@@ -84,7 +84,7 @@ class Node():
 
         url = self.format_url(self.next_host, self.next_port, '/ring/quit')
         params = self.serialize()
-        r = requests.post(url, params=params)
+        requests.post(url, params=params)
 
     @staticmethod
     def parse_ip_port(s):
@@ -159,8 +159,14 @@ def quit_ring():
         if node.next_host == host and node.next_port == port:
             node.change_next_ptr(next_host, next_port)
         else:
-            # TODO: Should redirect the request to the next node
-            pass
+            url = Node.format_url(node.next_host, node.next_port, '/ring/quit')
+            params = {
+                'host': host,
+                'port': port,
+                'next_host': next_host,
+                'next_port': next_port
+            }
+            requests.post(url, params=params)
 
     return request.values.get('port')
 
