@@ -14,6 +14,8 @@ import time
 # log.setLevel(logging.ERROR)
 
 queue = Queue(10)
+HEARTBEAT_INTERVAL = 5
+HEARTBEAT_TOLERANCE = 11
 
 
 class Server(threading.Thread):
@@ -38,10 +40,33 @@ class Worker(threading.Thread):
             queue.task_done()
 
 
+class Heartbeat(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        i = 0
+        while True:
+            # Try to send a heartbeat to the neighbor
+            url = Node.format_url(node.next_host, node.next_port, '/heartbeat')
+            try:
+                requests.post(url)
+            except requests.ConnectionError:
+                pass
+
+            # Checking own received heartbeats
+            if int(time.time()) - node.heartbeat_t_stamp > HEARTBEAT_TOLERANCE:
+                node.init_panic()
+
+            time.sleep(5)
+            i += 1
+
+
 class Node():
     def __init__(self, arg):
         self.le_participant = False
         self.leader_id = None
+        self.heartbeat_t_stamp = int(time.time())
 
         self.host, self.port = self.parse_ip_port(arg[0])
         if len(arg) == 2:
@@ -99,13 +124,15 @@ class Node():
             'port': self.port,
             'next_host': self.next_host,
             'next_port': self.next_port,
-            'leader': self.leader_id
+            'leader': self.leader_id,
+            'heartbeat': self.heartbeat_t_stamp
         }
         return s
 
     def change_next_ptr(self, ip, port):
         self.next_host = ip
         self.next_port = port
+        queue.put({'method': 'init_leader_election', 'args': ()})
 
     def quit_ring(self):
         # If this node is the last one - do nothing
@@ -150,6 +177,17 @@ class Node():
 
         requests.post(url, {'node_id': node_id})
         return
+
+    def init_panic(self):
+        self.panic(self.host, self.port)
+
+    def panic(self, host, port):
+        try:
+            url = node.format_url(self.next_host, self.next_port, '/panic')
+            requests.post(url, {'host': host, 'port': port})
+        except requests.ConnectionError:
+            # Dead node found.
+            self.change_next_ptr(host, port)
 
     @staticmethod
     def parse_ip_port(s):
@@ -231,7 +269,6 @@ def quit_ring():
         # Check if the node is pointing to the quitting node
         if node.next_host == host and node.next_port == port:
             node.change_next_ptr(next_host, next_port)
-            queue.put({'method': 'init_leader_election', 'args': ()})
         else:
             url = Node.format_url(node.next_host, node.next_port, '/ring/quit')
             params = {
@@ -252,9 +289,23 @@ def le_ring(message):
         queue.put({'method': 'chang_roberts', 'args': (message, node_id)})
     return ''
 
+
+@app.route('/heartbeat', methods=['POST'])
+def heartbeat():
+    node.heartbeat_t_stamp = int(time.time())
+    return ''
+
+
+@app.route('/panic', methods=['POST'])
+def panic():
+    host = request.values.get('host')
+    port = int(request.values.get('port'))
+    queue.put({'method': 'panic', 'args': (host, port)})
+
 node = None
 server = Server()
 client = Worker()
+thread_hbeat = Heartbeat()
 
 if __name__ == '__main__':
     if len(sys.argv) != 2 and len(sys.argv) != 3:
@@ -273,6 +324,9 @@ if __name__ == '__main__':
 
     client.daemon = True
     client.start()
+
+    thread_hbeat.daemon = True
+    thread_hbeat.start()
 
     while True:
         try:
