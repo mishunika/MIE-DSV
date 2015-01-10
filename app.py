@@ -64,7 +64,6 @@ class Node():
         self.next_port = int(port)
         return old_pointer
 
-
     def serialize(self):
         s = {
             'host': self.host,
@@ -73,6 +72,19 @@ class Node():
             'next_port': self.next_port
         }
         return s
+
+    def change_next_ptr(self, ip, port):
+        self.next_host = ip
+        self.next_port = port
+
+    def quit_ring(self):
+        # If this node is the last one - do nothing
+        if self.host == self.next_host and self.port == self.next_port:
+            return
+
+        url = self.format_url(self.next_host, self.next_port, '/ring/quit')
+        params = self.serialize()
+        r = requests.post(url, params=params)
 
     @staticmethod
     def parse_ip_port(s):
@@ -100,12 +112,12 @@ def index():
     return jsonify({'message': 'I am working right now! Don\'t bother me!'})
 
 
-@app.route('/serialize')
+@app.route('/serialize', methods=['GET'])
 def serialize():
     return jsonify(node.serialize())
 
 
-@app.route('/serialize/all')
+@app.route('/serialize/all', methods=['GET'])
 def all_serialize():
     curr_node = node.serialize()
     json_res = [curr_node]
@@ -113,7 +125,8 @@ def all_serialize():
 
     while curr_node['host'] != next_host or curr_node['port'] != next_port:
         try:
-            r = requests.get(Node.format_url(next_host, next_port, '/serialize'))
+            r = requests.get(Node.format_url(next_host,
+                                             next_port, '/serialize'))
             next_node = r.json()
             json_res.append(next_node)
             next_host = next_node['next_host']
@@ -136,6 +149,20 @@ def join_ring():
     return jsonify(node.join(ip, port))
 
 
+@app.route('/ring/quit', methods=['POST'])
+def quit_ring():
+    host, port = request.values.get('host'), int(request.values.get('port'))
+    next_host = request.values.get('next_host')
+    next_port = int(request.values.get('next_port'))
+    if host and port and next_host and next_port:
+        # Check if the node is pointing to the quitting node
+        if node.next_host == host and node.next_port == port:
+            node.change_next_ptr(next_host, next_port)
+        else:
+            # TODO: Should redirect the request to the next node
+            pass
+
+    return request.values.get('port')
 
 
 node = None
@@ -159,4 +186,8 @@ if __name__ == '__main__':
     # client.start()
 
     while True:
-        time.sleep(1)
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            node.quit_ring()
+            sys.exit()
