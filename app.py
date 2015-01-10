@@ -1,7 +1,10 @@
 #!flask/bin/python
+# -*- coding: utf-8 -*-
+from blessings import Terminal
 from flask import Flask, jsonify, request
 from Queue import Queue
-# import logging
+import codecs
+import logging
 import requests
 import socket
 import struct
@@ -9,13 +12,18 @@ import sys
 import threading
 import time
 
+sys.stdout = codecs.getwriter('utf8')(sys.stdout)
+sys.stderr = codecs.getwriter('utf8')(sys.stderr)
+
 """ Hide logger messages from console output"""
-# log = logging.getLogger('werkzeug')
-# log.setLevel(logging.ERROR)
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 queue = Queue(10)
 HEARTBEAT_INTERVAL = 5
 HEARTBEAT_TOLERANCE = 11
+
+term = Terminal()
 
 
 class Server(threading.Thread):
@@ -60,6 +68,18 @@ class Heartbeat(threading.Thread):
 
             time.sleep(5)
             i += 1
+
+
+class ChatUI(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        while True:
+            s = raw_input()
+            # print term.move_up + "Me: " + s.decode('utf-8') + term.clear_eol
+            sys.stdout.write(term.move_up + term.move_x(0) + term.clear_eol)
+            queue.put({'method': 'init_message', 'args': (s,)})
 
 
 class Node():
@@ -183,11 +203,42 @@ class Node():
 
     def panic(self, host, port):
         try:
-            url = node.format_url(self.next_host, self.next_port, '/panic')
+            url = self.format_url(self.next_host, self.next_port, '/panic')
             requests.post(url, {'host': host, 'port': port})
         except requests.ConnectionError:
             # Dead node found.
             self.change_next_ptr(host, port)
+
+    def init_message(self, message):
+        self.propagate_message(message, self.id())
+
+    def propagate_message(self, message, sender):
+        if self.leader_id == self.id():
+            self.persist_message(message, sender, innitial=True)
+        else:
+            try:
+                url = self.format_url(self.next_host, self.next_port,
+                                      '/ring/message')
+                requests.post(url, {'message': message, 'sender': sender})
+            except requests.ConnectionError:
+                # TODO: Handle error.
+                pass
+
+    def persist_message(self, message, sender, innitial=False):
+        if not innitial and self.id() == self.leader_id:
+            return
+
+        try:
+            url = self.format_url(self.next_host, self.next_port,
+                                  '/ring/message')
+            requests.put(url, {'message': message, 'sender': sender})
+        except requests.ConnectionError:
+            # TODO: Handle error.
+            pass
+
+        ip, port = self.decode_id(sender)
+        print ip + ":" + str(port) + ": " + message
+
 
     @staticmethod
     def parse_ip_port(s):
@@ -302,10 +353,22 @@ def panic():
     port = int(request.values.get('port'))
     queue.put({'method': 'panic', 'args': (host, port)})
 
+
+@app.route('/ring/message', methods=['POST', 'PUT'])
+def message_ring():
+    message = request.values.get('message')
+    sender = int(request.values.get('sender'))
+    if request.method == 'POST':
+        queue.put({'method': 'propagate_message', 'args': (message, sender)})
+    else:
+        queue.put({'method': 'persist_message', 'args': (message, sender)})
+
+
 node = None
 server = Server()
 client = Worker()
 thread_hbeat = Heartbeat()
+chat_ui = ChatUI()
 
 if __name__ == '__main__':
     if len(sys.argv) != 2 and len(sys.argv) != 3:
@@ -327,6 +390,9 @@ if __name__ == '__main__':
 
     thread_hbeat.daemon = True
     thread_hbeat.start()
+
+    chat_ui.daemon = True
+    chat_ui.start()
 
     while True:
         try:
