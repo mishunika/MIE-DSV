@@ -171,15 +171,26 @@ def message_ring():
     message = request.values.get('message')
     sender = int(request.values.get('sender'))
     if request.method == 'POST':
-        node.queue.put({'method': 'propagate_message', 'args': (message, sender)})
+        node.queue.put({'method': 'propagate_message',
+                        'args': (message, sender)})
     else:
-        node.queue.put({'method': 'persist_message', 'args': (message, sender)})
+        node.queue.put({'method': 'persist_message',
+                        'args': (message, sender)})
 
 
 node = None
+
+""" Initializing the working threads
+    server - the thread of listening web app
+    worker - the thread that executes the tasks from the node's queue
+    heart_beat - the thread responsible for sending and verifying received
+        heartbeats
+    chat_ui - the thread responsible for the chat UI, i.e. managing user input.
+
+"""
 server = Server()
-client = Worker()
-thread_hbeat = Heartbeat()
+worker = Worker()
+heart_beat = Heartbeat()
 chat_ui = ChatUI()
 
 if __name__ == '__main__':
@@ -197,11 +208,11 @@ if __name__ == '__main__':
 
     node.start()
 
-    client.daemon = True
-    client.start()
+    worker.daemon = True
+    worker.start()
 
-    thread_hbeat.daemon = True
-    thread_hbeat.start()
+    heart_beat.daemon = True
+    heart_beat.start()
 
     chat_ui.daemon = True
     chat_ui.start()
