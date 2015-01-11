@@ -115,8 +115,8 @@ def all_serialize():
 def join_ring():
     real_ip = request.remote_addr
     ip = request.args.get('ip')
-    if real_ip != ip:
-        return jsonify({'message': 'You are a liar!', 'success': False}), 403
+    # if real_ip != ip:
+    #     return jsonify({'message': 'You are a liar!', 'success': False}), 403
 
     port = request.args.get('port')
 
