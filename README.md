@@ -81,5 +81,5 @@ $ sudo pip install virtualenv
 $ virtualenv flask
 $ source flask/bin/activate
 $ pip install -r requirements.txt
-./app.py src_ip:src_port [target_ip:target_port]
+$ ./app.py src_ip:src_port [target_ip:target_port]
 ```
