@@ -85,7 +85,8 @@ class Node():
             'next_host': self.next_host,
             'next_port': self.next_port,
             'leader': self.leader_id,
-            'heartbeat': self.heartbeat_t_stamp
+            'heartbeat': self.heartbeat_t_stamp,
+            'leader_decoded': self.decode_id(self.leader_id)
         }
         return s
 
