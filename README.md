@@ -15,12 +15,16 @@ The program will be implemented in Python programming language and the nodes wil
 ### Starting a single node (w/o ring)
 The first node from a topology is pointing to itself and it is forming a one-node ring until it receives a join request from other ring.
 
-![Single node](https://raw.githubusercontent.com/mishunika/MIE-DSV/master/pic/single_node.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mishunika/MIE-DSV/master/pic/single_node.png" alt="Single node" />
+</p>
 
 ### Joining the ring
 A new node will join the ring by knowing the address of any node from the ring by knocking to it. The nodes will accept join requests, will start pointing the knocking node and will send the address of the next node to which the new node will point.
 
-![Joining the ring](https://raw.githubusercontent.com/mishunika/MIE-DSV/master/pic/join_the_ring.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mishunika/MIE-DSV/master/pic/join_the_ring.png" alt="Joining the ring" />
+</p>
 
 ### Quitting the ring
 When node A wants to quit the ring it sends a quit request to the neighboring node with its own UID (ip:port) and the UID (ip:port) of it's neighbor.
@@ -42,7 +46,9 @@ Because the ring is unidirectional, the panic will be sent to the next node whic
 
 After the panic handler finishes its job — we have a fully functional ring again.
 
-![Node crash handler](https://raw.githubusercontent.com/mishunika/MIE-DSV/master/pic/node_crash.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mishunika/MIE-DSV/master/pic/node_crash.png" alt="Node crash handler" />
+</p>
 
 ### Node identification
 Each node is listening on a ip:port. The UID is basically the real binary value of the ip and port. Knowing that the ports are in a 16 bit space and knowing that the ip address represents four 8-bit blocks, I am converting the ip address to its real integer value, shifting left with 16 bits (i.e., multiplying with 2^16) and adding the port value. This is the encoded UID.
